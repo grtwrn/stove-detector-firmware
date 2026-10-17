@@ -17,3 +17,11 @@ the download matches the signed SHA-256. Anything else is refused.
 
 Published by `esp32/provision-esp32.sh release --push`. Don't edit by hand — a
 changed manifest without a fresh signature is rejected by every unit.
+
+## Public service monitoring
+
+The uptime workflow checks the public https://stovedetector.com/healthz endpoint
+every 10 minutes. It uses a standard runner in this public repository, where
+GitHub Actions runner minutes are free. It needs no secrets and checks no
+private source code. Checks cover HTTP/database/disk health, email/push health
+and aggregate online-device counts, as reported by that public endpoint.

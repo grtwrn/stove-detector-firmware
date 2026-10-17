@@ -1,0 +1,56 @@
+# Outside watch on stovedetector.com. A service that is down stops every
+# offline alert and every stove alert to phones, and nothing inside it can say
+# so. GitHub emails the repository owner when a scheduled run fails, so a red
+# run here IS the alert. It fails when:
+#   - the site does not answer, or /healthz reports the database or disk bad
+#   - the last email or push attempt failed (key expired, service rejecting us)
+#   - fewer than half the units active in the last day are online now
+name: StoveDetector uptime
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: public-uptime
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check stovedetector.com
+        run: |
+          set -u
+          for try in 1 2 3; do
+            body=$(curl -fsS --max-time 20 https://stovedetector.com/healthz) && break
+            body=""
+            sleep 20
+          done
+          if [ -z "$body" ]; then
+            echo "::error::stovedetector.com/healthz did not answer 200 after 3 tries"
+            exit 1
+          fi
+          echo "$body"
+          echo "$body" | python3 -c '
+          import json, sys
+          h = json.load(sys.stdin)
+          problems = []
+          if not h.get("ok"):
+              problems.append("database or data disk failing")
+          if h.get("email") is False:
+              problems.append("the last email send failed")
+          if h.get("push") is False:
+              problems.append("the last push send failed")
+          units = h.get("units") or {}
+          active, online = units.get("active_day", 0), units.get("online", 0)
+          if active >= 2 and online * 2 < active:
+              problems.append(f"only {online} of {active} recently active units are online")
+          for p in problems:
+              print(f"::error::{p}")
+          sys.exit(1 if problems else 0)
+          '
